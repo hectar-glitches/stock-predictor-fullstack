@@ -2,15 +2,15 @@ import React from 'react';
 
 const STOCK_OPTIONS = [
   'AAPL','MSFT','GOOGL','AMZN','TSLA',
-  'NVDA','META','BRK-B','JPM','V'
+  'NVDA','META','BRK-B','JPM','V','IBM'
 ];
 
 export default function Sidebar({ symbol, onChangeSymbol, onUpdate, loading }) {
   return (
-    <aside className="w-72 bg-gray-900 text-gray-100 p-6 flex flex-col">
-      <h2 className="text-lg font-semibold mb-4">⚙️ Chart Parameters</h2>
+    <aside className="w-72 bg-gray-900 text-gray-100 p-6 flex flex-col shadow-lg">
+      <h2 className="text-lg font-semibold mb-4">⚙️ Stock Options</h2>
 
-      <label htmlFor="ticker" className="text-sm mb-1">Ticker</label>
+      <label htmlFor="ticker" className="text-sm mb-1">Pick a stock</label>
       <select
         id="ticker"
         value={symbol}

@@ -1,32 +1,39 @@
 import React from 'react';
 
 export default function SummaryStats({ stats, loading }) {
-  const items = [
-    ['Last Price', stats?.last],
-    ['High',       stats?.high],
-    ['Low',        stats?.low],
-    ['Volume',     stats?.volume],
-  ];
-
-  if (loading && !stats) {
-    return <div className="text-center py-20 text-gray-500">Loading stats…</div>;
+  if (loading) {
+    return <p className="text-gray-500">Loading stats...</p>;
   }
 
-  if (!stats) {
-    return <div className="text-center py-20 text-gray-400">Click “Update” to load data</div>;
-  }
+  // Use the keys returned by /stock-stats endpoint
+  const { last, high, low, volume } = stats || {}; 
 
   return (
     <div className="grid grid-cols-2 gap-4">
-      {items.map(([label, value]) => (
-        <div
-          key={label}
-          className="bg-white dark:bg-gray-700 p-4 rounded-lg shadow h-24 flex flex-col justify-center"
-        >
-          <p className="text-sm text-gray-500 dark:text-gray-300">{label}</p>
-          <p className="text-xl font-bold">{value?.toLocaleString() ?? '--'}</p>
-        </div>
-      ))}
+      <div>
+        <h4 className="text-sm font-semibold text-gray-500">Last Price</h4>
+        <p className="text-lg font-bold text-gray-800 dark:text-gray-200">
+          {last !== undefined ? `$${last.toFixed(2)}` : '--'} {/* Use 'last' */}
+        </p>
+      </div>
+      <div>
+        <h4 className="text-sm font-semibold text-gray-500">High</h4>
+        <p className="text-lg font-bold text-gray-800 dark:text-gray-200">
+          {high !== undefined ? `$${high.toFixed(2)}` : '--'}
+        </p>
+      </div>
+      <div>
+        <h4 className="text-sm font-semibold text-gray-500">Low</h4>
+        <p className="text-lg font-bold text-gray-800 dark:text-gray-200">
+          {low !== undefined ? `$${low.toFixed(2)}` : '--'}
+        </p>
+      </div>
+      <div>
+        <h4 className="text-sm font-semibold text-gray-500">Volume</h4>
+        <p className="text-lg font-bold text-gray-800 dark:text-gray-200">
+          {volume !== undefined ? volume.toLocaleString() : '--'}
+        </p>
+      </div>
     </div>
   );
 }
