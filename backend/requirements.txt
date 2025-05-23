@@ -6,3 +6,4 @@ numpy
 lightgbm
 pydantic
 scikit-learn
+cachetools
