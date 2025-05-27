@@ -22,10 +22,10 @@ export default function ChartPanel({ ohlc, loading }) {
 
   // Format data for the chart
   const chartData = ohlc
-    .filter(item => item.Date && item.Close) // Use 'Date' and 'Close' fields
+    .filter(item => item.date && item.close) // Use 'date' and 'close' fields (lowercase)
     .map(item => ({
-      date: new Date(item.Date).toLocaleDateString(), // Use item.Date
-      close: parseFloat(item.Close) // Use item.Close
+      date: new Date(item.date).toLocaleDateString(), // Use item.date (lowercase)
+      close: parseFloat(item.close) // Use item.close (lowercase)
     }));
 
   return (

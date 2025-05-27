@@ -7,7 +7,8 @@ import PredictionsPanel from './components/PredictionsPanel';
 import ErrorBoundary from './components/ErrorBoundary';
 
 async function fetchSentiment(symbol) {
-  const apiKey = 'VALID_API_KEY';
+  // Replace with your actual Alpha Vantage API key
+  const apiKey = 'demo'; // Using demo key - get your free key from https://www.alphavantage.co/support/#api-key
   const url = `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=${symbol}&apikey=${apiKey}`;
 
   try {
@@ -57,7 +58,9 @@ export default function App() {
   // Function to fetch sentiment data
   const fetchSentimentData = async (currentSymbol) => {
     setLoading(true);
+    console.log(`Fetching sentiment data for ${currentSymbol}...`);
     const result = await fetchSentiment(currentSymbol);
+    console.log(`Sentiment result for ${currentSymbol}:`, result);
     setSentiment(result);
     setLoading(false);
   };
@@ -164,23 +167,19 @@ export default function App() {
                             ? sentiment.sentimentScore.toFixed(2)
                             : 'N/A'
                         })`
-                      : 'No sentiment data available'}
+                      : 'No sentiment data available (Score: N/A)'}
                   </p>
                 </div>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
                   {loading
-                    ? 'Fetching sentiment data...'
+                    ? 'Fetching sentiment data from Alpha Vantage API...'
                     : sentiment.sentimentLabel === 'Rate limit exceeded or invalid API key'
-                    ? 'API rate limit exceeded or invalid API key. Please try again later.'
+                    ? 'Alpha Vantage API rate limit exceeded or invalid API key. Please check the console for details.'
                     : sentiment.sentimentLabel === 'Error fetching sentiment data'
                     ? 'Unable to fetch sentiment data. Please check your connection or API key.'
                     : sentiment.sentimentLabel
-                    ? `${sentiment.sentimentLabel} (Score: ${
-                        sentiment.sentimentScore !== null
-                          ? sentiment.sentimentScore.toFixed(2)
-                          : 'N/A'
-                      })`
-                    : 'No sentiment data available.'}
+                    ? `Market sentiment for ${symbol} based on recent news and social media.`
+                    : 'No sentiment data available. Make sure you have a valid Alpha Vantage API key.'}
                 </p>
               </div>
             </div>

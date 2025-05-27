@@ -1,159 +1,179 @@
-"""
-Stock fetching module with optimized caching and batch requests 
-to avoid hitting rate limits with Yahoo Finance.
-"""
+# backend/stock_fetcher.py
 import yfinance as yf
 import pandas as pd
+from datetime import datetime
 import logging
 import time
-from datetime import datetime, timedelta
 import os
-from cachetools import TTLCache
+from functools import lru_cache
+import json
+from pathlib import Path
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
+# Configure cache directory
+CACHE_DIR = Path(__file__).parent / "cache"
+CACHE_DIR.mkdir(exist_ok=True)
 
-# Initialize cache for stock data
-# Cache data for 30 minutes to avoid excessive API calls
-CACHE_TTL = 1800  # 30 minutes in seconds
-stock_cache = TTLCache(maxsize=100, ttl=CACHE_TTL)
+# Configure how long cache entries should be considered valid (in seconds)
+CACHE_TTL = {
+    "history": 3600,  # 1 hour for historical data
+    "latest": 300,    # 5 minutes for latest prices
+}
 
-def get_stock_data(symbols, days=30):
-    """
-    Fetch stock data for one or multiple symbols.
-    Uses batch requests and caching to minimize API calls.
+def get_cache_path(symbol, type="history", days=180):
+    """Generate a cache file path for the given parameters."""
+    return CACHE_DIR / f"{symbol}_{type}_{days}.json"
+
+def is_cache_valid(cache_path, ttl):
+    """Check if cache file exists and is not expired."""
+    if not cache_path.exists():
+        return False
     
-    Args:
-        symbols: String or list of strings with stock symbols
-        days: Number of days of history to fetch
+    # Check if file is newer than TTL
+    file_age = time.time() - os.path.getmtime(cache_path)
+    return file_age < ttl
+
+def save_to_cache(data, cache_path):
+    """Save data to cache file."""
+    try:
+        # Prepare the data with timestamp
+        cache_data = {
+            "timestamp": time.time(),
+            "data": data
+        }
         
-    Returns:
-        Dictionary with symbols as keys and DataFrames as values
-    """
-    # Convert single symbol to list for consistent handling
+        # Convert DataFrame to dict for JSON serialization
+        if isinstance(data, dict):
+            for k, v in data.items():
+                if isinstance(v, pd.DataFrame):
+                    cache_data["data"][k] = v.to_dict(orient="split")
+        elif isinstance(data, pd.DataFrame):
+            cache_data["data"] = data.to_dict(orient="split")
+                
+        with open(cache_path, 'w') as f:
+            json.dump(cache_data, f)
+            
+        logging.debug(f"Saved data to cache: {cache_path}")
+    except Exception as e:
+        logging.warning(f"Failed to save to cache: {e}")
+
+def load_from_cache(cache_path):
+    """Load data from cache file."""
+    try:
+        with open(cache_path, 'r') as f:
+            cache_data = json.load(f)
+            
+        data = cache_data.get("data")
+        
+        # Convert dict back to DataFrame if needed
+        if isinstance(data, dict):
+            for k, v in data.items():
+                if isinstance(v, dict) and "index" in v and "data" in v:
+                    data[k] = pd.DataFrame(data=v["data"], index=v["index"], columns=v["columns"])
+        elif isinstance(data, dict) and "index" in data and "data" in data:
+            data = pd.DataFrame(data=data["data"], index=data["index"], columns=data["columns"])
+            
+        logging.debug(f"Loaded data from cache: {cache_path}")
+        return data
+    except Exception as e:
+        logging.warning(f"Failed to load from cache: {e}")
+        return None
+
+def get_stock_history(symbol, days=180):
+    """Get historical data for a stock symbol with caching."""
+    cache_path = get_cache_path(symbol, "history", days)
+    
+    # Try to load from cache first
+    if is_cache_valid(cache_path, CACHE_TTL["history"]):
+        data = load_from_cache(cache_path)
+        if data is not None and not isinstance(data, pd.DataFrame) and not data.empty:
+            return data
+    
+    # If cache miss or invalid, fetch fresh data
+    try:
+        logging.info(f"Fetching historical data for {symbol} (days={days})")
+        
+        # Add a small delay to avoid rate limiting
+        time.sleep(0.5)
+        
+        stock = yf.Ticker(symbol)
+        df = stock.history(period=f"{days}d")
+        
+        if df.empty:
+            logging.warning(f"No data returned for {symbol}")
+            return pd.DataFrame()
+        
+        # Reset index to make Date a column
+        df = df.reset_index()
+        
+        # Cache the result
+        save_to_cache(df, cache_path)
+        
+        return df
+    
+    except Exception as e:
+        logging.error(f"Error fetching history for {symbol}: {str(e)}")
+        return pd.DataFrame()
+
+def get_stock_data(symbols, days=1):
+    """Get stock data for one or multiple symbols."""
+    result = {}
+    
+    # Convert to list if single symbol
     if isinstance(symbols, str):
         symbols = [symbols]
     
-    results = {}
-    uncached_symbols = []
-    
-    # Check cache first
     for symbol in symbols:
-        cache_key = f"{symbol}_{days}"
-        if cache_key in stock_cache:
-            results[symbol] = stock_cache[cache_key]
-            logging.debug(f"Using cached data for {symbol}")
-        else:
-            uncached_symbols.append(symbol)
-    
-    if not uncached_symbols:
-        return results
-    
-    # Batch request for uncached symbols (max 10 at a time to avoid errors)
-    for i in range(0, len(uncached_symbols), 10):
-        batch = uncached_symbols[i:i+10]
-        # Join symbols for batch request
-        symbols_str = " ".join(batch)
+        result[symbol] = get_stock_history(symbol, days)
         
-        try:
-            logging.info(f"Fetching batch data for: {symbols_str}")
-            # Use 1d interval for efficiency
-            data = yf.download(
-                symbols_str,
-                period=f"{days}d",
-                interval="1d",
-                auto_adjust=True,
-                progress=False,
-                group_by='ticker'
-            )
-            
-            # If only one symbol was fetched, the data structure is different
-            if len(batch) == 1:
-                symbol = batch[0]
-                # Handle single symbol format
-                if not data.empty:
-                    df = data.copy()
-                    # Ensure we have index as a column
-                    df = df.reset_index()
-                    results[symbol] = df
-                    # Cache the result
-                    stock_cache[f"{symbol}_{days}"] = df
-                else:
-                    results[symbol] = pd.DataFrame()
-            else:
-                # Handle multi-symbol format
-                for symbol in batch:
-                    if (symbol,) in data.columns.levels[1]:
-                        # Extract data for this symbol
-                        df = data.xs(symbol, axis=1, level=1, drop_level=True)
-                        # Ensure we have index as a column
-                        df = df.reset_index()
-                        results[symbol] = df
-                        # Cache the result
-                        stock_cache[f"{symbol}_{days}"] = df
-                    else:
-                        results[symbol] = pd.DataFrame()
-                        logging.warning(f"No data returned for {symbol}")
-            
-            # Wait briefly between batches to avoid rate limits
-            if i + 10 < len(uncached_symbols):
-                time.sleep(1)
-                
-        except Exception as e:
-            logging.error(f"Error fetching batch data: {str(e)}")
-            # If batch request fails, try individual requests with backoff
-            for symbol in batch:
-                results[symbol] = pd.DataFrame()
-    
-    return results
-
-def get_latest_prices(symbols):
-    """
-    Get just the latest closing prices for a list of symbols.
-    Optimized for minimal data transfer.
-    
-    Args:
-        symbols: List of stock symbols
-        
-    Returns:
-        Dictionary with symbols as keys and prices as values
-    """
-    result = {}
-    
-    # Get data for all symbols
-    data = get_stock_data(symbols, days=5)  # Just need recent data
-    
-    # Extract latest prices
-    for symbol in symbols:
-        try:
-            if symbol in data and not data[symbol].empty and 'Close' in data[symbol].columns:
-                # Get the latest closing price
-                latest_close = data[symbol]['Close'].iloc[-1]
-                result[symbol] = float(latest_close) if not pd.isna(latest_close) else None
-            else:
-                result[symbol] = None
-        except Exception as e:
-            logging.error(f"Error processing {symbol}: {str(e)}")
-            result[symbol] = None
-    
     return result
 
-def get_stock_history(symbol, days=180):
-    """
-    Get historical data for a single stock.
-    Wrapper around get_stock_data for backward compatibility.
+def get_latest_prices(symbols):
+    """Get latest closing prices for a list of stock symbols."""
+    cache_path = get_cache_path("batch", "latest", len(symbols))
     
-    Args:
-        symbol: Stock symbol
-        days: Number of days of history
+    # Try to load from cache first
+    if is_cache_valid(cache_path, CACHE_TTL["latest"]):
+        prices = load_from_cache(cache_path)
+        if prices is not None:
+            return prices
+    
+    # If cache miss or invalid, fetch fresh data
+    prices = {}
+    
+    try:
+        logging.info(f"Fetching latest prices for {len(symbols)} symbols")
         
-    Returns:
-        DataFrame with stock data or empty DataFrame if error
-    """
-    data = get_stock_data(symbol, days)
-    return data[symbol] if symbol in data else pd.DataFrame()
-
-def clear_cache():
-    """Clear the stock data cache"""
-    stock_cache.clear()
-    logging.info("Stock data cache cleared")
+        # Fetch data in batches to avoid rate limits
+        batch_size = 5
+        for i in range(0, len(symbols), batch_size):
+            batch = symbols[i:i+batch_size]
+            
+            # Add a small delay between batches
+            if i > 0:
+                time.sleep(1)
+                
+            logging.debug(f"Fetching batch: {', '.join(batch)}")
+            
+            for symbol in batch:
+                try:
+                    df = get_stock_history(symbol, days=5)  # Get 5 days to ensure we have some data
+                    
+                    if not df.empty and 'Close' in df.columns:
+                        # Get the latest price
+                        latest_price = df['Close'].iloc[-1]
+                        prices[symbol] = float(latest_price) if not pd.isna(latest_price) else None
+                    else:
+                        prices[symbol] = None
+                        
+                except Exception as e:
+                    logging.error(f"Error fetching latest price for {symbol}: {str(e)}")
+                    prices[symbol] = None
+    
+        # Cache the results
+        save_to_cache(prices, cache_path)
+        
+        return prices
+        
+    except Exception as e:
+        logging.error(f"Error fetching latest prices: {str(e)}")
+        return {symbol: None for symbol in symbols}

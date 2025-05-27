@@ -262,6 +262,10 @@ def convert_to_native_types(obj):
     """
     Convert numpy and pandas types to native Python types for JSON serialization.
     """
+    import pandas as pd
+    import numpy as np
+    from datetime import datetime
+    
     if isinstance(obj, (np.integer, np.int64)):
         return int(obj)
     elif isinstance(obj, (np.floating, np.float64)):
