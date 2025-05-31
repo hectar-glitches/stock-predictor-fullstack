@@ -51,7 +51,6 @@ def fetch_top_stocks():
     Fetch latest closing prices for top stocks.
     Returns a dictionary of stock symbols and their prices.
     """
-    # Using the optimized batch fetching method from stock_fetcher
     return stock_fetcher.get_latest_prices(TOP_STOCKS)
 
 def fetch_index_data():
@@ -59,7 +58,6 @@ def fetch_index_data():
     Fetch latest index values.
     Returns a dictionary of index names and their values.
     """
-    # Using the optimized batch fetching method from stock_fetcher
     index_tickers = list(INDEXES.values())
     prices = stock_fetcher.get_latest_prices(index_tickers)
     
@@ -87,7 +85,7 @@ def fetch_stock_stats(symbol: str, days: int = 1):
                 "error": f"No data found for {symbol}."
             }
 
-        # Check if required columns exist
+        # Check for the required columns
         required_columns = ['Close', 'High', 'Low', 'Volume']
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
@@ -145,7 +143,7 @@ def get_ohlc(symbol, days=180):
     
     logging.debug(f"Processed OHLC data: {len(df)} rows, columns: {df.columns.tolist()}")
     
-    # Convert to serializable format (list of dicts)
+    # Convert to serializable format
     result = []
     for _, row in df.iterrows():
         # Convert datetime to string format to ensure it's serializable
@@ -207,7 +205,6 @@ def predict_stock(symbol):
     prices = df['Close'].values
     
     # train the model if not already trained
-    # Using a new model instance for each stock would be better, but keeping global for now
     if not trained:
         model.fit(X, prices)
         trained = True
@@ -282,7 +279,7 @@ def convert_to_native_types(obj):
         return {k: convert_to_native_types(v) for k, v in obj.items()}
     elif isinstance(obj, list):
         return [convert_to_native_types(i) for i in obj]
-    elif pd.isna(obj):  # Handle NaN/None values
+    elif pd.isna(obj):
         return None
     else:
         return obj
