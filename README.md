@@ -70,6 +70,6 @@ If the chart is not displaying, ensure:
 ### Sentiment Analysis Not Working
 
 If sentiment analysis is not displaying:
-1. Check you have a valid Alpha Vantage API key
+1. Check you have a valid Alpha Vantage API key and you're hiding it when you publish.
 2. Check the browser console for API error messages
 3. Note that Alpha Vantage has rate limits for free accounts (typically 5 calls per minute)
