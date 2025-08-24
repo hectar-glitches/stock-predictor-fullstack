@@ -5,20 +5,14 @@ import SummaryStats from './components/SummaryStats';
 import ChartPanel from './components/ChartPanel';
 import PredictionsPanel from './components/PredictionsPanel';
 import ErrorBoundary from './components/ErrorBoundary';
+import { apiFetch, alphaVantageEndpoint, endpoints, logger } from './config/api';
 
 async function fetchSentiment(symbol) {
-  // Replace with your actual Alpha Vantage API key
-  const apiKey = 'demo'; // Using demo key - get your free key from https://www.alphavantage.co/support/#api-key
-  const url = `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=${symbol}&apikey=${apiKey}`;
+  const url = alphaVantageEndpoint(symbol);
 
   try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`Failed to fetch sentiment data: ${response.status}`);
-    const data = await response.json();
-
-     // Debugging log
-
-    console.log('Sentiment API Response:', data);
+    const data = await apiFetch(url);
+    logger.log('Sentiment API Response:', data);
 
     // Handle rate limit or invalid inputs
     if (data.Information || data.Note) {
@@ -35,7 +29,7 @@ async function fetchSentiment(symbol) {
     const sentimentLabel = data.feed[0].overall_sentiment_label;
     return { sentimentScore, sentimentLabel };
   } catch (err) {
-    console.error('Error fetching sentiment data:', err); // Debugging log
+    logger.error('Error fetching sentiment data:', err);
     return { sentimentScore: null, sentimentLabel: 'Error fetching sentiment data' };
   }
 }
@@ -69,34 +63,27 @@ export default function App() {
   const fetchStockData = async (currentSymbol) => {
     setLoading(true);
     try {
-      // Fetch OHLC data
-      const ohlcResponse = await fetch(`http://localhost:8000/stock-ohlc?symbol=${currentSymbol}`);
-      if (!ohlcResponse.ok) throw new Error(`Failed to fetch OHLC data: ${ohlcResponse.status}`);
-      const ohlcData = await ohlcResponse.json();
-      console.log('OHLC API Response:', ohlcData); 
-      setOhlcData(ohlcData);
+      // Fetch stock data (updated endpoint)
+      const stockDataResponse = await apiFetch(endpoints.STOCK_DATA(currentSymbol, 30));
+      logger.log('Stock Data Response:', stockDataResponse);
+      setOhlcData(stockDataResponse.data || []);
 
       // Fetch predictions
-      const predResponse = await fetch(`http://localhost:8000/predict`, {
+      const predData = await apiFetch(endpoints.PREDICT, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ symbol: currentSymbol }),
       });
-      if (!predResponse.ok) throw new Error(`Failed to fetch predictions: ${predResponse.status}`);
-      const predData = await predResponse.json();
       setPredictions(predData);
 
-      // Fetch Stock Stats <-- Add this fetch
-      const statsResponse = await fetch(`http://localhost:8000/stock-stats?symbol=${currentSymbol}`);
-      if (!statsResponse.ok) throw new Error(`Failed to fetch stock stats: ${statsResponse.status}`);
-      const statsData = await statsResponse.json();
-      setStockStats(statsData); // <-- Set the stats state
+      // Fetch Stock Stats
+      const statsData = await apiFetch(endpoints.STOCK_STATS(currentSymbol));
+      setStockStats(statsData);
 
     } catch (err) {
-      console.error('Error fetching stock data:', err);
+      logger.error('Error fetching stock data:', err);
       setOhlcData([]); 
       setPredictions(null);
-      setStockStats({}); // <-- Clear stats on error
+      setStockStats({});
     } finally {
       setLoading(false);
     }

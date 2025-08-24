@@ -1,9 +1,31 @@
-fastapi
-uvicorn
-yfinance
-pandas
-numpy
-lightgbm
-pydantic
-scikit-learn
-cachetools
+# Core FastAPI and server dependencies
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+gunicorn==23.0.0
+python-multipart==0.0.20
+python-dotenv==1.0.1
+pydantic-settings==2.7.0
+
+# Data processing and ML
+pandas==2.3.2
+numpy==2.3.2
+lightgbm==4.6.0
+scikit-learn==1.7.1
+yfinance==0.2.65
+
+# Caching and storage
+cachetools==6.1.0
+redis==5.2.1
+sqlalchemy==2.0.36
+alembic==1.14.0
+
+# Rate limiting and monitoring
+slowapi==0.1.9
+prometheus-client==0.21.1
+
+# Logging
+structlog==25.1.0
+
+# Database drivers (optional, uncomment as needed)
+# psycopg2-binary==2.9.10  # PostgreSQL
+# asyncpg==0.31.0          # Async PostgreSQL
