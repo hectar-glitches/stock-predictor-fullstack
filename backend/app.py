@@ -18,6 +18,7 @@ from model import (
     convert_to_native_types,
 )
 import stock_fetcher
+from stock_fetcher import get_stock_history
 
 app = FastAPI()
 model_loader = ModelLoader()
@@ -150,6 +151,57 @@ async def stock_ohlc(symbol: str, days: int = 180):
         logging.error(f"Error in stock_ohlc endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
 
+@app.get("/stock-data")
+async def stock_data(symbol: str, days: int = 30):
+    """
+    Get stock data with current price and historical data - frontend compatible endpoint
+    """
+    logging.info(f"Stock data request for symbol={symbol}, days={days}")
+    try:
+        # Use the stock fetcher to get data
+        data = stock_fetcher.get_stock_data(symbol, days)
+        
+        if symbol not in data or data[symbol].empty:
+            logging.error(f"No data returned for symbol={symbol}")
+            raise HTTPException(status_code=404, detail=f"No data found for symbol {symbol}")
+            
+        df = data[symbol]
+        
+        # Ensure we have the required data
+        if 'Date' not in df.columns or 'Close' not in df.columns:
+            logging.error(f"Missing required columns in data for {symbol}")
+            raise HTTPException(status_code=500, detail="Invalid data format")
+        
+        # Get current price (latest close price)
+        current_price = float(df['Close'].iloc[-1])
+        
+        # Convert historical data to the expected format
+        historical_data = []
+        for _, row in df.iterrows():
+            date_str = row['Date'].strftime('%Y-%m-%d') if isinstance(row['Date'], (datetime, pd.Timestamp)) else str(row['Date'])
+            historical_data.append({
+                'date': date_str,
+                'close': float(row['Close']),
+                'open': float(row.get('Open', row['Close'])),
+                'high': float(row.get('High', row['Close'])),
+                'low': float(row.get('Low', row['Close'])),
+                'volume': int(row.get('Volume', 0))
+            })
+        
+        # Return data in the format expected by frontend
+        return {
+            'symbol': symbol,
+            'current_price': current_price,
+            'historical_data': historical_data,
+            'last_updated': datetime.now().isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error in stock_data endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/predict")
 async def predict_stock(request: PredictRequest):
     try:
@@ -170,7 +222,7 @@ async def calculate_prediction(symbol: str, period: str):
     """Calculate stock price prediction for a given symbol and period."""
     try:
         # Load historical data for the stock
-        df = get_history(symbol, days=180)
+        df = get_stock_history(symbol, days=180)
 
         # Check if DataFrame is empty using .empty property
         if df.empty or 'Close' not in df.columns:

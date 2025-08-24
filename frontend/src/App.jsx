@@ -1,188 +1,181 @@
 import React, { useState, useEffect } from 'react';
-import Sidebar from './components/Sidebar';
-import Navbar from './components/Navbar';
-import SummaryStats from './components/SummaryStats';
-import ChartPanel from './components/ChartPanel';
-import PredictionsPanel from './components/PredictionsPanel';
-import ErrorBoundary from './components/ErrorBoundary';
-import { apiFetch, alphaVantageEndpoint, endpoints, logger } from './config/api';
+import './index.css';
+import { StockProvider, useStock } from './context/StockContext';
+import { useTheme, useToast } from './hooks';
+import Navbar from './components/Navbar.jsx';
+import Sidebar from './components/Sidebar.jsx';
+import PredictionsPanel from './components/PredictionsPanel.jsx';
+import ChartPanel from './components/ChartPanel.jsx';
+import SummaryStats from './components/SummaryStats.jsx';
+import Settings from './components/Settings.jsx';
+import Toast from './components/Toast.jsx';
+import Loading from './components/Loading.jsx';
+import Error from './components/ErrorSimple.jsx';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 
-async function fetchSentiment(symbol) {
-  const url = alphaVantageEndpoint(symbol);
+function AppContent() {
+  const { state, actions } = useStock();
+  const { theme } = useTheme();
+  const { toast, showToast } = useToast();
+  const [showSettings, setShowSettings] = useState(false);
 
-  try {
-    const data = await apiFetch(url);
-    logger.log('Sentiment API Response:', data);
-
-    // Handle rate limit or invalid inputs
-    if (data.Information || data.Note) {
-      return { sentimentScore: null, sentimentLabel: 'Rate limit exceeded or invalid API key' };
-    }
-
-    // Handle missing or empty feed
-    if (!data.feed || data.feed.length === 0) {
-      return { sentimentScore: null, sentimentLabel: 'No sentiment data available' };
-    }
-
-    // Parse sentiment data from the response
-    const sentimentScore = data.feed[0].overall_sentiment_score;
-    const sentimentLabel = data.feed[0].overall_sentiment_label;
-    return { sentimentScore, sentimentLabel };
-  } catch (err) {
-    logger.error('Error fetching sentiment data:', err);
-    return { sentimentScore: null, sentimentLabel: 'Error fetching sentiment data' };
-  }
-}
-
-export default function App() {
-  const [symbol, setSymbol] = useState('AAPL'); // Default stock symbol
-  const [sentiment, setSentiment] = useState({ sentimentScore: null, sentimentLabel: '' });
-  const [stockStats, setStockStats] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [autoFetch, setAutoFetch] = useState(false); // Flag to control auto-fetching
-  const [ohlcData, setOhlcData] = useState([]);
-  const [predictions, setPredictions] = useState(null);
-
-  // Function to handle symbol change
-  const onChangeSymbol = (newSymbol) => {
-    setSymbol(newSymbol); // Update the selected stock symbol
-    setAutoFetch(false); // Disable auto-fetching after user interaction
-  };
-
-  // Function to fetch sentiment data
-  const fetchSentimentData = async (currentSymbol) => {
-    setLoading(true);
-    console.log(`Fetching sentiment data for ${currentSymbol}...`);
-    const result = await fetchSentiment(currentSymbol);
-    console.log(`Sentiment result for ${currentSymbol}:`, result);
-    setSentiment(result);
-    setLoading(false);
-  };
-
-  // Function to fetch stock data (OHLC, predictions, and stats)
-  const fetchStockData = async (currentSymbol) => {
-    setLoading(true);
-    try {
-      // Fetch stock data (updated endpoint)
-      const stockDataResponse = await apiFetch(endpoints.STOCK_DATA(currentSymbol, 30));
-      logger.log('Stock Data Response:', stockDataResponse);
-      setOhlcData(stockDataResponse.data || []);
-
-      // Fetch predictions
-      const predData = await apiFetch(endpoints.PREDICT, {
-        method: 'POST',
-        body: JSON.stringify({ symbol: currentSymbol }),
-      });
-      setPredictions(predData);
-
-      // Fetch Stock Stats
-      const statsData = await apiFetch(endpoints.STOCK_STATS(currentSymbol));
-      setStockStats(statsData);
-
-    } catch (err) {
-      logger.error('Error fetching stock data:', err);
-      setOhlcData([]); 
-      setPredictions(null);
-      setStockStats({});
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Fetch data when autoFetch is true or symbol changes
   useEffect(() => {
-    if (autoFetch && symbol) {
-      Promise.all([
-        fetchSentimentData(symbol),
-        fetchStockData(symbol) // This now fetches stats too
-      ]);
-      setAutoFetch(false); 
+    // Apply theme to document
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
     }
-  }, [autoFetch, symbol]);
+  }, [theme]);
+
+  useEffect(() => {
+    // Initial data fetch
+    if (!state.stockData || !state.predictions) {
+      handleFetchData();
+    }
+  }, [state.selectedSymbol, state.timeframe]);
+
+  // Auto-refresh functionality
+  useEffect(() => {
+    if (!state.autoRefresh) return;
+
+    const interval = setInterval(() => {
+      handleFetchData(true); // Silent refresh
+    }, state.refreshInterval);
+
+    return () => clearInterval(interval);
+  }, [state.autoRefresh, state.refreshInterval, state.selectedSymbol, state.timeframe]);
+
+  const handleFetchData = async (silent = false) => {
+    try {
+      await actions.fetchStockData(state.selectedSymbol, state.timeframe);
+      await actions.fetchPredictions(state.selectedSymbol, state.timeframe);
+      
+      if (silent) {
+        showToast('Data refreshed', 'success');
+      }
+    } catch (error) {
+      showToast(error.message || 'Failed to fetch data', 'error');
+    }
+  };
+
+  const handleStockSelect = (stock) => {
+    actions.setSymbol(stock);
+    showToast(`Selected ${stock}`, 'info');
+  };
+
+  const handleTimeframeSelect = (timeframe) => {
+    actions.setTimeframe(timeframe);
+    showToast(`Timeframe changed to ${timeframe}`, 'info');
+  };
+
+  const handleRetry = () => {
+    actions.clearError();
+    handleFetchData();
+  };
+
+  if (state.loading && !state.stockData) {
+    return (
+      <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center">
+        <Loading.Spinner size="large" />
+      </div>
+    );
+  }
 
   return (
-    <ErrorBoundary>
-      <div className="flex h-screen">
-        {/* Sidebar */}
-        <Sidebar
-          symbol={symbol}
-          onChangeSymbol={onChangeSymbol} 
-          onUpdate={() => {
-            setAutoFetch(true); 
-          }}
-          loading={loading}
+    <div className={`min-h-screen transition-colors duration-200 ${
+      theme === 'dark' 
+        ? 'bg-gray-900 text-gray-100' 
+        : 'bg-gray-100 text-gray-900'
+    }`}>
+      <Navbar 
+        onRefresh={() => handleFetchData()}
+        onSettingsClick={() => setShowSettings(true)}
+        loading={state.loading}
+        autoRefresh={state.autoRefresh}
+      />
+      
+      <div className="flex">
+        <Sidebar 
+          selectedStock={state.selectedSymbol}
+          timeframe={state.timeframe}
+          onStockSelect={handleStockSelect}
+          onTimeframeSelect={handleTimeframeSelect}
+          loading={state.loading}
         />
+        
+        <main className="flex-1 p-6">
+          {state.error && (
+            <Error 
+              message={state.error}
+              onRetry={handleRetry}
+              className="mb-6"
+            />
+          )}
+          
+          {state.stockData && (
+            <>
+              <SummaryStats 
+                stockData={state.stockData}
+                loading={state.loading}
+              />
+              
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+                <ChartPanel 
+                  stockData={state.stockData}
+                  loading={state.loading}
+                />
+                <PredictionsPanel 
+                  predictions={state.predictions} 
+                  currentPrice={state.stockData?.current_price}
+                  symbol={state.selectedSymbol}
+                  loading={state.loading}
+                />
+              </div>
+            </>
+          )}
 
-        {/* Main Content */}
-        <div className="flex-1 flex flex-col">
-          <Navbar />
-          <div className="flex-1 flex flex-col lg:flex-row gap-6 p-6 bg-gray-100 dark:bg-gray-800 overflow-auto">
-            {/* Left Panel */}
-            <div className="w-full lg:w-1/3 flex flex-col gap-6">
-              <div className="bg-white dark:bg-gray-700 rounded-lg shadow p-6">
-                {/* Pass stockStats to SummaryStats */}
-                <SummaryStats stats={stockStats} loading={loading} /> 
-              </div>
-              <div className={`p-6 rounded-lg shadow-lg ${
-                sentiment.sentimentLabel === 'Positive'
-                  ? 'bg-green-100 dark:bg-green-900'
-                  : sentiment.sentimentLabel === 'Negative'
-                  ? 'bg-red-100 dark:bg-red-900'
-                  : 'bg-gray-100 dark:bg-gray-800'
-              }`}>
-                <h3 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-200">
-                  Current Sentiment
-                </h3>
-                <div className="flex items-center space-x-4 mb-4">
-                  <span className="text-4xl">
-                    {sentiment.sentimentLabel === 'Positive' ? '📈' :
-                     sentiment.sentimentLabel === 'Negative' ? '📉' :
-                     sentiment.sentimentLabel === 'Neutral' ? '⚖️' : '❓'}
-                  </span>
-                  <p className={`text-lg font-semibold ${
-                    sentiment.sentimentLabel === 'Positive'
-                      ? 'text-green-700 dark:text-green-300'
-                      : sentiment.sentimentLabel === 'Negative'
-                      ? 'text-red-700 dark:text-red-300'
-                      : 'text-gray-700 dark:text-gray-300'
-                  }`}>
-                    {loading
-                      ? 'Loading sentiment analysis...'
-                      : sentiment.sentimentLabel
-                      ? `${sentiment.sentimentLabel} (Score: ${
-                          sentiment.sentimentScore !== null
-                            ? sentiment.sentimentScore.toFixed(2)
-                            : 'N/A'
-                        })`
-                      : 'No sentiment data available (Score: N/A)'}
-                  </p>
-                </div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {loading
-                    ? 'Fetching sentiment data from Alpha Vantage API...'
-                    : sentiment.sentimentLabel === 'Rate limit exceeded or invalid API key'
-                    ? 'Alpha Vantage API rate limit exceeded or invalid API key. Please check the console for details.'
-                    : sentiment.sentimentLabel === 'Error fetching sentiment data'
-                    ? 'Unable to fetch sentiment data. Please check your connection or API key.'
-                    : sentiment.sentimentLabel
-                    ? `Market sentiment for ${symbol} based on recent news and social media.`
-                    : 'No sentiment data available. Make sure you have a valid Alpha Vantage API key.'}
-                </p>
-              </div>
+          {!state.stockData && !state.loading && !state.error && (
+            <div className="flex flex-col items-center justify-center h-64">
+              <p className="text-gray-500 dark:text-gray-400 text-lg mb-4">
+                Select a stock to get started
+              </p>
+              <button
+                onClick={() => handleFetchData()}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+              >
+                Load Data
+              </button>
             </div>
-
-            {/* Right Panel */}
-            <div className="w-full lg:w-2/3 flex flex-col gap-6">
-              <div className="flex-1 bg-white dark:bg-gray-700 rounded-lg shadow-lg p-6">
-                <ChartPanel ohlc={ohlcData} loading={loading} />
-              </div>
-              <div className="flex-1 bg-white dark:bg-gray-700 rounded-lg shadow-lg p-6">
-                <PredictionsPanel predictions={predictions} loading={loading} />
-              </div>
-            </div>
-          </div>
-        </div>
+          )}
+        </main>
       </div>
+
+      {/* Settings Modal */}
+      <Settings 
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
+
+      {/* Toast Notifications */}
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        isVisible={toast.isVisible}
+        onClose={() => showToast('', 'info', false)}
+      />
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <ErrorBoundary>
+      <StockProvider>
+        <AppContent />
+      </StockProvider>
     </ErrorBoundary>
   );
 }
+
+export default App;
